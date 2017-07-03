@@ -1,2 +1,2 @@
 # posh
-All public PowerShell scripts, usuaslly referenced on my blog.
+All public PowerShell scripts, usually referenced on my blog.
