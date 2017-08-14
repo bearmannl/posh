@@ -25,6 +25,7 @@
      Version	: 1.0
 					1.1 | MBE | 2017-08-10 | Added HTML output, including function, param and switch.
 					1.2 | MBE | 2017-08-11 | Added comments.
+					1.3 | MBE | 2017-08-14 | Added explicit states for the firewall status. Includes ports which are open but have no service listening and strict ports.
 #>
 Param(
 	[Parameter(Mandatory=$true)]
@@ -36,30 +37,30 @@ Param(
 #region basic script setup
 $script:localServer = $env:COMPUTERNAME
 
-# Set location to store migration logs
+#set location to store migration logs
 $script:logPathFolder = "D:\Logs\Scripts"
 
 if(!(test-path $script:logPathFolder)) { New-Item -ItemType directory -Path $script:logPathFolder }
-$cDate = (Get-Date)
-$script:logPath = "$script:logPathFolder\Test-NetConnectionsOutput_$($script:localServer)_{0:yyyy-MM-dd_HHmmss}.rtf" -f ($cDate)
+$script:cDate = (Get-Date)
+$script:logPath = "$script:logPathFolder\Test-NetConnectionsOutput_$($script:localServer)_{0:yyyy-MM-dd_HHmmss}.rtf" -f ($script:cDate)
 
 $script:BaseDirectory = Get-Location
 $script:BaseConfig = "\Test-NetConnections.json"
 
 $script:htmlOutputFolder = "C:\inetpub\wwwroot\health80"
 $script:htmlOutPutFile = "\default.htm"
-$script:csvOutPutFile = "\Test-NetConnectionsOutput_$($script:localServer)_{0:yyyy-MM-dd_HHmmss}.csv" -f ($cDate)
+$script:csvOutPutFile = "\Test-NetConnectionsOutput_$($script:localServer)_{0:yyyy-MM-dd_HHmmss}.csv" -f ($script:cDate)
 
 #endregion
 
 #region Functions
 function Write-VerboseCustom {
-[CmdLetBinding()]
-Param(
-	[Parameter(Mandatory=$true)]
-	[String]$Message
-)
-	#to provide verbose feedback to users, only on select statements
+	[CmdLetBinding()]
+	Param(
+		[Parameter(Mandatory=$true)]
+		[String]$Message
+	)
+	# to provide verbose feedback to users, only on select statements
 	if($Verbs) {
 		$oldVerbosePreference = $VerbosePreference
 		$VerbosePreference = "Continue"
@@ -68,27 +69,27 @@ Param(
 	}
 }
 
-function ConvertTo-HtmlConditionalFormat{
-[CmdLetBinding()]
-Param(
-	$PlainHtml,
-	$ConditionalStyle
-)
+function ConvertTo-HtmlConditionalFormat {
+	[CmdLetBinding()]
+	Param(
+		$PlainHtml,
+		$ConditionalStyle
+	)
 	Add-Type -AssemblyName System.Xml.Linq
-	#load HTML content as XML
+	# load HTML content as XML
 	$xml = [System.Xml.Linq.XDocument]::Parse($PlainHtml)
 	$namespace = 'http://www.w3.org/1999/xhtml'
-	#select the type of html elements for processing
+	# select the type of html elements for processing
 	$elements = $xml.Descendants("{$namespace}td")
-	#loop through each conditional formatting rule
+	# loop through each conditional formatting rule
 	foreach($cs in $ConditionalStyle.Keys) {
 		$scriptBlock = [scriptblock]::Create($cs)
-		#find the column matching the correct content value
+		# find the column matching the correct content value
 		$columnIndex = (($xml.Descendants("{$namespace}th") | Where-Object { $_.Value -eq $ConditionalStyle.$cs[0] }).NodesBeforeSelf() | Measure-Object).Count
-		#only select the elements matching the correct column
+		# only select the elements matching the correct column
 		$elements | Where-Object { ($_.NodesBeforeSelf() | Measure-Object).Count -eq $columnIndex } | ForEach-Object {
 			if(&$scriptBlock) {
-				#apply the actual attribute value
+				# apply the actual attribute value
 				$_.SetAttributeValue( "style", $ConditionalStyle.$cs[1])
 			}
 		}
@@ -101,60 +102,73 @@ Param(
 #region Main script execution
 Start-Transcript -Path $script:logPath
 
-#load and parse the json config file 
+# load and parse the json config file 
 try { $script:config = Get-Content $script:BaseDirectory$script:BaseConfig -Raw -ErrorAction:SilentlyContinue -WarningAction:SilentlyContinue | ConvertFrom-Json -ErrorAction:SilentlyContinue -WarningAction:SilentlyContinue }
 catch { Write-Error -Message "Unable to open base config file" }
 
 $serverResults = @()
 
-#loop through all configured server mappings, execute when on the correct server. Allows for distributing one central json file.
+# loop through all configured server mappings, execute when on the correct server. Allows for distributing one central json file.
 foreach($server in $script:config.Servers) {
 	if($server.Name -eq $localServer) {
 		Write-VerboseCustom "Checking connection from source server: $localServer"
 
-		#process each destination server
+		# process each destination server
 		foreach($connection in $server.Outbound) {
 			Write-VerboseCustom "Checking outbound connections to destination server: $($connection.Name)"
 			
-			#ping every port in the mapping
+			# ping every port in the mapping
 			foreach($port in $connection.Ports) {
 				$testConnection = Test-NetConnection -Computername $connection.Name -Port $port -WarningAction:SilentlyContinue
-				if($testConnection.TcpTestSucceeded) { $portStatus = "OPEN" } else { $portStatus = "CLOSED" }
-				Write-VerboseCustom "$($connection.Name):$($port) - $($portStatus)"
+				if($testConnection.PingSucceeded -AND $testConnection.TcpTestSucceeded){ $portStatus = "LISTENING" } 
+					elseif ($testConnection.PingSucceeded -AND !$testConnection.TcpTestSucceeded) { $portStatus = "OPEN" }
+					elseif (!$testConnection.PingSucceeded -AND !$testConnection.TcpTestSucceeded) { $portStatus = "CLOSED" }
+					elseif (!$testConnection.PingSucceeded -AND $testConnection.TcpTestSucceeded) { $portStatus = "STRICT" }
+					else { $portStatus = "UNKNOWN" }
+				Write-VerboseCustom "$($port) $($portStatus)"
 
-				#create a custom object with the desired headers
+				# create a custom object with the desired headers
 				$row = New-Object System.Object
 				$row | Add-Member -MemberType NoteProperty -Name "Local Server" -Value $localServer
 				$row | Add-Member -MemberType NoteProperty -Name "Remote Server" -Value $connection.Name
 				$row | Add-Member -MemberType NoteProperty -Name "Port" -Value $port
 				$row | Add-Member -MemberType NoteProperty -Name "Status" -Value $portStatus
 
-				#store each port as a row in the resultset
+				# store each port as a row in the resultset
 				$serverResults += $row
 			}
 		}
 	}
 }
 
-#output the results according to the provided param
+# output the results according to the provided param
 switch -Wildcard ($Output.ToLower()) {
 	"csv" {	$serverResults | Export-CSV -Path $script:logPathFolder$script:csvOutPutFile }
 	"html" {
-		#add basic page style configuration
-		$style = "<style>"
-		$style = $style + "BODY{background-color:peachpuff;}"
-		$style = $style + "TABLE{border-width: 1px;border-style: solid;border-color: black;border-collapse: collapse;}"
-		$style = $style + "TH{border-width: 1px;padding: 0px;border-style: solid;border-color: black;background-color:thistle}"
-		$style = $style + "TD{border-width: 1px;padding: 0px;border-style: solid;border-color: black;background-color:palegoldenrod}"
-		$style = $style + "</style>"
+		# add basic page style configuration
+		$style = "<style>
+		BODY{background-color:darkslategrey;color:aliceblue;}
+		TABLE{border-width: 1px;border-style: solid;border-color: darkgrey;border-collapse: collapse;}
+		TH{border-width: 1px;padding: 0px;border-style: solid;border-color: darkgrey;background-color:brown}
+		TD{border-width: 1px;padding: 0px;border-style: solid;border-color: darkgrey;background-color:lightslategrey}
+		</style>"
 
-		#convert the results to html with rudimentary style
-		$html = $serverResults | ConvertTo-Html -Title "$($script:localServer): Firewall Port Status" -Head $style -Body "<H2>$($cDate)</H2>" -Pre "<P>Automatically generated by <strong>$($script:localServer)</strong>:</P>" -Post "For details, contact the IT Service Center."
+		# convert the results to html with rudimentary style
+		$html = $serverResults | ConvertTo-Html -Title "$($script:localServer): Firewall Port Status" -Head $style -Body "<H2>$($script:cDate)</H2>" -Post "For details, contact the IT Service Center." -Pre "<p>Automatically generated by <strong>$($script:localServer)</strong>:</p>
+		<p>Status legenda:</p>
+		<p>LISTENING - PING OK - SERVICE OK</p>
+		<p>OPEN - PING OK - SERVICE NOTOK</p>
+		<p>CLOSED - PING NOTOK - SERVICE NOTOK</p>
+		<p>STRICT - PING NOTOK - SERVICE OK</p>
+		<p>UNKNOWN - PING ? - SERVICE ?</p>"
 
-		#add conditional formatting rules
+		# add conditional formatting rules
 		$cStyle = @{}
-		$cStyle.Add('$_.Value -eq "OPEN"',("Status","background-color:green"))
+		$cStyle.Add('$_.Value -eq "LISTENING"',("Status","background-color:green"))
+		$cStyle.Add('$_.Value -eq "OPEN"',("Status","background-color:orange"))
 		$cStyle.Add('$_.Value -eq "CLOSED"',("Status","background-color:red"))
+		$cStyle.Add('$_.Value -eq "UNKNOWN"',("Status","background-color:purple"))
+		$cStyle.Add('$_.Value -eq "STRICT"',("Status","background-color:blue"))
 
 		$styledHtml = ConvertTo-HtmlConditionalFormat -PlainHtml $html -ConditionalStyle $cStyle
 		$styledHtml | Out-File $script:htmlOutputFolder$script:htmlOutPutFile -Force
