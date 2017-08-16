@@ -11,9 +11,13 @@
 .PARAMETER Output
 	Required parameter, determines the desired type of output.
 
+.PARAMETER TestData
+	Optional switch, portscans can take a while, in case of debugging or editing styling of the script, use test data.
+
 .EXAMPLE
      Test-NetConnections.ps1 -Output CSV
-	 Test-NetConnections.ps1 -Verbs -Output HTML
+	 Test-NetConnections.ps1 -Output HTML -Verbs
+	 Test-NetConnections.ps1 -Output HTML -Verbs -TestData
       
 .LINK
     http://www.rubicon.nl
@@ -31,7 +35,8 @@ Param(
 	[Parameter(Mandatory=$true)]
 	[ValidateSet('CSV','HTML')]
 	[System.String]$Output,
-	[Switch]$Verbs
+	[Switch]$Verbs,
+	[Switch]$TestData
 )
 
 #region basic script setup
@@ -97,6 +102,43 @@ function ConvertTo-HtmlConditionalFormat {
 	
 	Write-Output $xml.ToString()
 }
+
+function Test-PortStatus {
+	[CmdLetBinding()]
+	Param(
+		$RemoteHost,
+		$RemotePort
+	)
+	$testConnection = Test-NetConnection -Computername $RemoteHost -Port $RemotePort -WarningAction:SilentlyContinue
+	if($testConnection.PingSucceeded -AND $testConnection.TcpTestSucceeded){ $pStatus = "LISTENING" } 
+		elseif ($testConnection.PingSucceeded -AND !$testConnection.TcpTestSucceeded) { $pStatus = "OPEN" }
+		elseif (!$testConnection.PingSucceeded -AND !$testConnection.TcpTestSucceeded) { $pStatus = "CLOSED" }
+		elseif (!$testConnection.PingSucceeded -AND $testConnection.TcpTestSucceeded) { $pStatus = "STRICT" }
+		else { $pStatus = "UNKNOWN" }
+	Write-VerboseCustom "$($RemotePort) $($pStatus)"
+
+	Write-Output $pStatus
+}
+
+function Add-ServerResults {
+	[CmdLetBinding()]
+	Param(
+		[System.String]$LocalServer,
+		[System.String]$RemoteServer,
+		[System.Int32]$RemotePort,
+		[System.String]$PortStatus
+	)
+
+	# create a custom object with the desired headers
+	$row = New-Object System.Object
+	$row | Add-Member -MemberType NoteProperty -Name "Local Server" -Value $LocalServer
+	$row | Add-Member -MemberType NoteProperty -Name "Remote Server" -Value $RemoteServer
+	$row | Add-Member -MemberType NoteProperty -Name "Port" -Value $RemotePort
+	$row | Add-Member -MemberType NoteProperty -Name "Status" -Value $PortStatus
+
+	# store each port as a row in the resultset
+	$script:serverResults += $row
+}
 #endregion
 
 #region Main script execution
@@ -106,39 +148,32 @@ Start-Transcript -Path $script:logPath
 try { $script:config = Get-Content $script:BaseDirectory$script:BaseConfig -Raw -ErrorAction:SilentlyContinue -WarningAction:SilentlyContinue | ConvertFrom-Json -ErrorAction:SilentlyContinue -WarningAction:SilentlyContinue }
 catch { Write-Error -Message "Unable to open base config file" }
 
-$serverResults = @()
+$script:serverResults = @()
 
-# loop through all configured server mappings, execute when on the correct server. Allows for distributing one central json file.
-foreach($server in $script:config.Servers) {
-	if($server.Name -eq $localServer) {
-		Write-VerboseCustom "Checking connection from source server: $localServer"
+if(!$TestData) {
+	# loop through all configured server mappings, execute when on the correct server. Allows for distributing one central json file.
+	foreach($server in $script:config.Servers) {
+		if($server.Name -eq $localServer) {
+			Write-VerboseCustom "Checking connection from source server: $localServer"
 
-		# process each destination server
-		foreach($connection in $server.Outbound) {
-			Write-VerboseCustom "Checking outbound connections to destination server: $($connection.Name)"
-			
-			# ping every port in the mapping
-			foreach($port in $connection.Ports) {
-				$testConnection = Test-NetConnection -Computername $connection.Name -Port $port -WarningAction:SilentlyContinue
-				if($testConnection.PingSucceeded -AND $testConnection.TcpTestSucceeded){ $portStatus = "LISTENING" } 
-					elseif ($testConnection.PingSucceeded -AND !$testConnection.TcpTestSucceeded) { $portStatus = "OPEN" }
-					elseif (!$testConnection.PingSucceeded -AND !$testConnection.TcpTestSucceeded) { $portStatus = "CLOSED" }
-					elseif (!$testConnection.PingSucceeded -AND $testConnection.TcpTestSucceeded) { $portStatus = "STRICT" }
-					else { $portStatus = "UNKNOWN" }
-				Write-VerboseCustom "$($port) $($portStatus)"
-
-				# create a custom object with the desired headers
-				$row = New-Object System.Object
-				$row | Add-Member -MemberType NoteProperty -Name "Local Server" -Value $localServer
-				$row | Add-Member -MemberType NoteProperty -Name "Remote Server" -Value $connection.Name
-				$row | Add-Member -MemberType NoteProperty -Name "Port" -Value $port
-				$row | Add-Member -MemberType NoteProperty -Name "Status" -Value $portStatus
-
-				# store each port as a row in the resultset
-				$serverResults += $row
+			# process each destination server
+			foreach($connection in $server.Outbound) {
+				Write-VerboseCustom "Checking outbound connections to destination server: $($connection.Name)"
+				
+				# ping every port in the mapping
+				foreach($port in $connection.Ports) {
+					$portStatus = Test-PortStatus -RemoteHost $connection.Name -RemotePort $port
+					Add-ServerResults -LocalServer $localServer -RemoteServer $connection.Name -RemotePort $port -PortStatus $portStatus
+				}
 			}
 		}
 	}
+} else {
+	# portscans can take a while, in case of debugging or editing styling, use test data
+	Add-ServerResults -LocalServer "SERVER01" -RemoteServer "SERVER02" -RemotePort 80 -PortStatus "OPEN"
+	Add-ServerResults -LocalServer "SERVER01" -RemoteServer "SERVER02" -RemotePort 443 -PortStatus "CLOSED"
+	Add-ServerResults -LocalServer "SERVER01" -RemoteServer "SERVER03" -RemotePort 80 -PortStatus "LISTENING"
+	Add-ServerResults -LocalServer "SERVER01" -RemoteServer "SERVER03" -RemotePort 443 -PortStatus "STRICT"
 }
 
 # output the results according to the provided param
