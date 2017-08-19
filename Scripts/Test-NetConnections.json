@@ -1,6 +1,23 @@
 {
 	"Servers" : [
 		{
+			"Name" : "LOCAL-SERVER01",
+			"Outbound" : [
+				{
+					"Name" : "REMOTE-SERVER01",
+					"Ports" : [ 80,443 ]
+				},
+				{
+					"Name" : "REMOTE-SERVER02",
+					"Ports" : [ 80,443 ]
+				},
+				{
+					"Name" : "bing.com",
+					"Ports" : [ 80,443 ]
+				}
+			]
+		},
+		{
 			"Name" : "TST-SP-APP01",
 			"Outbound" : [
 				{

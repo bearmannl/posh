@@ -30,6 +30,7 @@
 					1.1 | MBE | 2017-08-10 | Added HTML output, including function, param and switch.
 					1.2 | MBE | 2017-08-11 | Added comments.
 					1.3 | MBE | 2017-08-14 | Added explicit states for the firewall status. Includes ports which are open but have no service listening and strict ports.
+					1.4 | MBE | 2017-08-19 | Cleaned up the TestData functionality. Added basic output folder checks.
 #>
 Param(
 	[Parameter(Mandatory=$true)]
@@ -42,10 +43,11 @@ Param(
 #region basic script setup
 $script:localServer = $env:COMPUTERNAME
 
-#set location to store migration logs
-$script:logPathFolder = "D:\Logs\Scripts"
+# set location to store migration logs
+$script:logPathFolder = "C:\Logs\Scripts"
 
-if(!(test-path $script:logPathFolder)) { New-Item -ItemType directory -Path $script:logPathFolder }
+if(!(Test-Path $script:logPathFolder)) { New-Item -ItemType directory -Path $script:logPathFolder > $null; Write-Verbose "Log output directory created at path $script:logPathFolder" }
+
 $script:cDate = (Get-Date)
 $script:logPath = "$script:logPathFolder\Test-NetConnectionsOutput_$($script:localServer)_{0:yyyy-MM-dd_HHmmss}.rtf" -f ($script:cDate)
 
@@ -54,7 +56,43 @@ $script:BaseConfig = "\Test-NetConnections.json"
 
 $script:htmlOutputFolder = "C:\inetpub\wwwroot\health80"
 $script:htmlOutPutFile = "\default.htm"
+
+$script:csvOutputFolder = $script:logPathFolder
 $script:csvOutPutFile = "\Test-NetConnectionsOutput_$($script:localServer)_{0:yyyy-MM-dd_HHmmss}.csv" -f ($script:cDate)
+
+if ($Output -eq "HTML") {
+	if(!(Test-Path $script:htmlOutputFolder)) {
+		$title = "HTML output path invalid"
+		$message = "$script:htmlOutputFolder does not exist, do you want to create a folder at this path?"
+		
+		$yes = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes","Creates a new folder."
+		$no = New-Object System.Management.Automation.Host.ChoiceDescription "&No","Exits the script."
+		$options = [System.Management.Automation.Host.ChoiceDescription[]]($yes, $no)
+		$result = $host.ui.PromptForChoice($title, $message, $options, 0) 
+		
+		switch ($result) {
+			0 { New-Item -ItemType directory -Path $script:htmlOutputFolder > $null; Write-Verbose "HTML output folder created." }
+			1 { Write-Error "No output folder available!" }
+		}
+	}
+}
+
+if ($Output -eq "CSV") {
+	if(!(Test-Path $script:csvOutputFolder)) {
+		$title = "CSV output path invalid"
+		$message = "$script:csvOutputFolder does not exist, do you want to create a folder at this path?"
+		
+		$yes = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes","Creates a new folder."
+		$no = New-Object System.Management.Automation.Host.ChoiceDescription "&No","Exits the script."
+		$options = [System.Management.Automation.Host.ChoiceDescription[]]($yes, $no)
+		$result = $host.ui.PromptForChoice($title, $message, $options, 0) 
+		
+		switch ($result) {
+			0 { New-Item -ItemType directory -Path $script:csvOutputFolder > $null; Write-Verbose "CSV output folder created." }
+			1 { Write-Error "No output folder available!" }
+		}
+	}
+}
 
 #endregion
 
@@ -109,12 +147,18 @@ function Test-PortStatus {
 		$RemoteHost,
 		$RemotePort
 	)
-	$testConnection = Test-NetConnection -Computername $RemoteHost -Port $RemotePort -WarningAction:SilentlyContinue
-	if($testConnection.PingSucceeded -AND $testConnection.TcpTestSucceeded){ $pStatus = "LISTENING" } 
-		elseif ($testConnection.PingSucceeded -AND !$testConnection.TcpTestSucceeded) { $pStatus = "OPEN" }
-		elseif (!$testConnection.PingSucceeded -AND !$testConnection.TcpTestSucceeded) { $pStatus = "CLOSED" }
-		elseif (!$testConnection.PingSucceeded -AND $testConnection.TcpTestSucceeded) { $pStatus = "STRICT" }
-		else { $pStatus = "UNKNOWN" }
+	if(!$TestData) {
+		# perform a met connection test, determine status based on PingSucceeded and TcpTestSucceeded
+		$testConnection = Test-NetConnection -Computername $RemoteHost -Port $RemotePort -WarningAction:SilentlyContinue
+		if($testConnection.PingSucceeded -AND $testConnection.TcpTestSucceeded){ $pStatus = "LISTENING" } 
+			elseif ($testConnection.PingSucceeded -AND !$testConnection.TcpTestSucceeded) { $pStatus = "OPEN" }
+			elseif (!$testConnection.PingSucceeded -AND !$testConnection.TcpTestSucceeded) { $pStatus = "CLOSED" }
+			elseif (!$testConnection.PingSucceeded -AND $testConnection.TcpTestSucceeded) { $pStatus = "STRICT" }
+			else { $pStatus = "UNKNOWN" }
+	} else {
+		# portscans can take a while, in case of debugging or editing styling, use test data
+		$pStatus = Get-Random -Input "LISTENING","LISTENING","LISTENING","LISTENING","LISTENING","OPEN","OPEN","OPEN","CLOSED","CLOSED","STRICT","STRICT","UNKNOWN"
+	}
 	Write-VerboseCustom "$($RemotePort) $($pStatus)"
 
 	Write-Output $pStatus
@@ -142,6 +186,8 @@ function Add-ServerResults {
 #endregion
 
 #region Main script execution
+$oldErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = "Stop"
 Start-Transcript -Path $script:logPath
 
 # load and parse the json config file 
@@ -150,30 +196,23 @@ catch { Write-Error -Message "Unable to open base config file" }
 
 $script:serverResults = @()
 
-if(!$TestData) {
-	# loop through all configured server mappings, execute when on the correct server. Allows for distributing one central json file.
-	foreach($server in $script:config.Servers) {
-		if($server.Name -eq $localServer) {
-			Write-VerboseCustom "Checking connection from source server: $localServer"
+# get outbound mappings for the local server. Allows for distributing one central json file.
+$server = $script:config.Servers | Where-Object { $_.Name -eq $localServer }
+if($server) {
+	Write-VerboseCustom "Checking connection from source server: $localServer"
 
-			# process each destination server
-			foreach($connection in $server.Outbound) {
-				Write-VerboseCustom "Checking outbound connections to destination server: $($connection.Name)"
-				
-				# ping every port in the mapping
-				foreach($port in $connection.Ports) {
-					$portStatus = Test-PortStatus -RemoteHost $connection.Name -RemotePort $port
-					Add-ServerResults -LocalServer $localServer -RemoteServer $connection.Name -RemotePort $port -PortStatus $portStatus
-				}
-			}
+	# process each destination server
+	foreach($connection in $server.Outbound) {
+		Write-VerboseCustom "Checking outbound connections to destination server: $($connection.Name)"
+		
+		# ping every port in the mapping
+		foreach($port in $connection.Ports) {
+			$portStatus = Test-PortStatus -RemoteHost $connection.Name -RemotePort $port
+			Add-ServerResults -LocalServer $localServer -RemoteServer $connection.Name -RemotePort $port -PortStatus $portStatus
 		}
 	}
 } else {
-	# portscans can take a while, in case of debugging or editing styling, use test data
-	Add-ServerResults -LocalServer "SERVER01" -RemoteServer "SERVER02" -RemotePort 80 -PortStatus "OPEN"
-	Add-ServerResults -LocalServer "SERVER01" -RemoteServer "SERVER02" -RemotePort 443 -PortStatus "CLOSED"
-	Add-ServerResults -LocalServer "SERVER01" -RemoteServer "SERVER03" -RemotePort 80 -PortStatus "LISTENING"
-	Add-ServerResults -LocalServer "SERVER01" -RemoteServer "SERVER03" -RemotePort 443 -PortStatus "STRICT"
+	Write-VerboseCustom "No configuration present for the local server."
 }
 
 # output the results according to the provided param
@@ -212,4 +251,5 @@ switch -Wildcard ($Output.ToLower()) {
 }
 
 Stop-Transcript
+$ErrorActionPreference = $oldErrorActionPreference
 #endregion
