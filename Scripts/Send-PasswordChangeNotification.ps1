@@ -43,7 +43,7 @@ Send-PasswordChangeNotification.ps1 -Expire 60 -Logging -Logile "C:\Logs\Passwor
     Version : 1.4
 #>
 
-Param (
+param (
     [ValidateRange(1,365)][int]$ExpireInDays = 30,
     [switch]$Logging,
     [string]$LogPath = "C:\Logs",
@@ -80,15 +80,15 @@ $verbosePreference = 'Continue'
 # Check Logging Settings
 if ($Logging) {
     # Test Log Folder Path and create new directory if false
-    if (!(Test-Path $LogPath)) {
+    if ($null -eq (Test-Path $LogPath)) {
         # Create CSV File and Headers
-        $newItem = New-Item $LogPath -ItemType Directory
+        New-Item $LogPath -ItemType Directory | Out-Null
         Write-Verbose ("[{0}] - New folder created at [{1}]" -f (Get-Date -Format T), $LogPath)
     }
     # Test Log File Path and create new file if false
-    if (!(Test-Path $logFile)) {
+    if ($null -eq (Test-Path $logFile)) {
         # Create CSV File and Headers
-        $newItem = New-Item $logFile -ItemType File
+        New-Item $logFile -ItemType File | Out-Null
         Add-Content $logFile "Date,Name,EmailAddress,DaystoExpire,ExpiresOn,Notified"
         Write-Verbose ("[{0}] - New logfile created at [{1}]" -f (Get-Date -Format T), $logFile)
     }
@@ -107,7 +107,7 @@ foreach ($user in $users) {
     $PasswordPol = (Get-ADUserResultantPasswordPolicy $user)
     $sent = "" # Reset Sent Flag
     # Check for Fine Grained Password
-    if (($PasswordPol) -ne $null) {
+    if ($null -ne ($PasswordPol)) {
         $maxPasswordAge = ($PasswordPol).MaxPasswordAge
     }
     else {
@@ -150,7 +150,7 @@ foreach ($user in $users) {
     } # End Testing
 
     # If a user has no email address listed
-    if (($emailAddress) -eq $null) {
+    if ($null -eq ($emailAddress)) {
         $emailAddress = $TestRecipient 
     }# End No Valid Email
 
@@ -163,7 +163,7 @@ foreach ($user in $users) {
             Write-Verbose ("[{0}] - Entry added to logfile for user [{1}]" -f (Get-Date -Format T), $user.UserPrincipalName)
         }
         # Send Email Message if not disabled by switch
-        if (!($TestMailDisabled)) {
+        if ($null -eq ($TestMailDisabled)) {
             Send-Mailmessage -SmtpServer $smtpServer -From $from -To $emailAddress -Subject $subject -Body $body -BodyAsHTML -Priority High -Encoding $textEncoding
             Write-Verbose ("[{0}] - Email sent to [{1}]" -f (Get-Date -Format T), $emailAddress)
         }

@@ -21,7 +21,7 @@
 	Version	: 1.6
 #>
 
-Param (
+param (
     [switch]$Log 
 )
 
@@ -33,7 +33,7 @@ if ($Log) {
     # Set location to store migration logs
     $logPathFolder = "D:\Logs\Scripts\MissingDependencies"
 
-    if (!(test-path $logPathFolder)) { New-Item -ItemType directory -Path $logPathFolder }
+    if ($null -eq (test-path $logPathFolder)) { New-Item -ItemType directory -Path $logPathFolder }
 
     $logPath = "$logPathFolder\Remove-MissingSetupFileOutput_{0:yyyy-MM-dd_HHmmss}.rtf" -f (Get-Date)
     Start-Transcript -Path $logPath	
@@ -83,9 +83,9 @@ $input = @(Get-Content $path)
 #Register functions
 ##
 
-#Unlock or re-lock a site if needed.
+# Unlock or re-lock a site if needed.
 function Set-SiteLockStatus {
-    Param(
+    param(
         [Microsoft.SharePoint.SPSite]$Site,
         [bool]$ReadLocked,
         [bool]$WriteLocked,
@@ -102,10 +102,10 @@ function Set-SiteLockStatus {
     }
 }
 
-#Declare SQL Query function  
-function Run-SQLQuery {  
+# Declare SQL Query function  
+function Invoke-SQLQuery {  
     [CmdLetBinding()]
-    Param(
+    param(
         [string]$SqlServer,
         [string]$SqlDatabase,
         [string]$SqlQuery
@@ -123,12 +123,12 @@ function Run-SQLQuery {
     $DataSet.Tables[0]  
 }
 
-#Declare the GetFileUrl function  
+# Declare the GetFileUrl function
 function GetFileUrl ($filepath, $DBname) {  
-    #Define SQL Query and set in Variable  
+    # Define SQL Query and set in Variable  
     $Query = "SELECT * from AllDocs where SetupPath = '" + $filepath + "'"  
-    #Running SQL Query to get information about the MissingFiles and store it in a Table  
-    $QueryReturn = @(Run-SQLQuery -SqlServer $DBserver -SqlDatabase $DBname -SqlQuery $Query | Select-Object Id, SiteId, DirName, LeafName, WebId, ListId) 
+    # Running SQL Query to get information about the MissingFiles and store it in a Table  
+    $QueryReturn = @(Invoke-SQLQuery -SqlServer $DBserver -SqlDatabase $DBname -SqlQuery $Query | Select-Object Id, SiteId, DirName, LeafName, WebId, ListId) 
 
     foreach ($event in $QueryReturn) {  
         if ($event.Id -and $event.SiteId -and $event.WebId) {
@@ -168,7 +168,7 @@ function GetFileUrl ($filepath, $DBname) {
                     Write-Warning "Failed to delete $file"
                     Write-Warning $_.Exception.Message
 
-					<#
+                    <#
 					Write-Verbose "Attempting te remove it again..."
                     try {
                         $docLib = $file.DocumentLibrary
@@ -193,13 +193,13 @@ function GetFileUrl ($filepath, $DBname) {
 #Execute functions
 ##
 
-#Log the CVS Column Title Line  
+# Log the CVS Column Title Line  
 Write-Host "MissingSetupFile;Url" -foregroundcolor Red
 
 foreach ($event in $input) {
     $DBname = $event.split(";")[0]
     $filepath = $event.split(";")[1]
-    #call Function
+    # Call Function
     GetFileUrl $filepath $dbname
 }
 

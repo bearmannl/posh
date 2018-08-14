@@ -25,8 +25,8 @@
 	Version	: 1.5
 #>
 
-Param (
-	[switch]$DeleteReferences
+param (
+    [switch]$DeleteReferences
 )
 
 ##
@@ -35,20 +35,19 @@ Param (
 
 # Set threading
 $ver = $host | Select-Object Version
-if($ver.Version.Major -gt 1) {$host.Runspace.ThreadOptions = "ReuseThread"}
+if ($ver.Version.Major -gt 1) {$host.Runspace.ThreadOptions = "ReuseThread"}
 
 # Load SharePoint PowerShell snap-in
-$snapIn="Microsoft.SharePoint.PowerShell"
-if(Get-PSSnapin $snapIn -EA "SilentlyContinue") {
+$snapIn = "Microsoft.SharePoint.PowerShell"
+if (Get-PSSnapin $snapIn -EA "SilentlyContinue") {
 }
-else 
-{
-	if (Get-PSSnapin $snapIn -Registered -EA "SilentlyContinue") {
-		Add-PSSnapin $snapIn
-		$tStamp = Get-Date -Format T
-		Write-Verbose "[$tStamp] - SharePoint PowerShell SnapIn loaded"
-	}
-$error.Clear()
+else {
+    if (Get-PSSnapin $snapIn -Registered -EA "SilentlyContinue") {
+        Add-PSSnapin $snapIn
+        $tStamp = Get-Date -Format T
+        Write-Verbose "[$tStamp] - SharePoint PowerShell SnapIn loaded"
+    }
+    $error.Clear()
 }
 
 ##
@@ -62,39 +61,39 @@ $input = @(Get-Content $path)
 #Declare Log File
 ##
 
-function StartTracing
-{
-[CmdLetBinding()]
-Param()
-	$logPath = 'D:\Logs\Scripts\MissingDependencies'
-	if (!(Test-Path -Path $logPath -PathType Container)) { New-Item -ItemType Directory -Force -Path $logPath }
+function StartTracing {
+    [CmdLetBinding()]
+    param()
+    $logPath = 'D:\Logs\Scripts\MissingDependencies'
+    if ($null -eq (Test-Path -Path $logPath -PathType Container)) { New-Item -ItemType Directory -Force -Path $logPath }
     $LogTime = Get-Date -Format yyyy-MM-dd_h-mm
-	Start-Transcript -Path "$logPath\MissingFeaturesOutput-$LogTime.rtf"
+    Start-Transcript -Path "$logPath\MissingFeaturesOutput-$LogTime.rtf"
 }
 
 function Set-SiteLockStatus {
-    Param(
-    [Microsoft.SharePoint.SPSite]$Site,
-    [bool]$ReadLocked,
-    [bool]$WriteLocked,
-    [bool]$ReadOnly
-)
-if ($ReadLocked) {
-    Set-SPSite $Site -LockState NoAccess
-        }elseif ($WriteLocked -AND !$ReadOnly) {
-            Set-SPSite $Site -LockState NoAdditions 
-                }elseif ($ReadOnly) {
-                    Set-SPSite $Site -LockState ReadOnly
-                    }
+    param(
+        [Microsoft.SharePoint.SPSite]$Site,
+        [bool]$ReadLocked,
+        [bool]$WriteLocked,
+        [bool]$ReadOnly
+    )
+    if ($ReadLocked) {
+        Set-SPSite $Site -LockState NoAccess
+    }
+    elseif ($WriteLocked -AND !$ReadOnly) {
+        Set-SPSite $Site -LockState NoAdditions 
+    }
+    elseif ($ReadOnly) {
+        Set-SPSite $Site -LockState ReadOnly
+    }
 }
 
-function Remove-SPFeatureFromContentDB
-{
-[CmdLetBinding()]
-Param(
-    [string]$ContentDb,
-    [string]$FeatureId
-)
+function Remove-SPFeatureFromContentDB {
+    [CmdLetBinding()]
+    param(
+        [string]$ContentDb,
+        [string]$FeatureId
+    )
     $db = Get-SPDatabase | Where-Object { $_.Name -eq $ContentDb }    
     
     $db.Sites | ForEach-Object {
@@ -106,14 +105,13 @@ Param(
     }
 }
 
-function Remove-SPFeature
-{
-[CmdLetBinding()]
-Param(
-    $obj,
-    [string]$objName,
-	[string]$featId
-)
+function Remove-SPFeature {
+    [CmdLetBinding()]
+    param(
+        $obj,
+        [string]$objName,
+        [string]$featId
+    )
     $siteType = $obj.GetType().Name
     $siteSC = $obj
     if ($siteType -eq "SPWeb") {
@@ -128,12 +126,12 @@ Param(
     $siteUrl = $siteSC.Url
 
     $feature = $obj.Features[$featId]    
-    if ($feature -ne $null) {
+    if ($null -ne $feature) {
         $verbosePreference = 'Continue'
         if ($DeleteReferences) {
             if ($readO -eq $true) {
-            Write-Verbose "$siteUrl locked, unlocking..."
-            Set-SPSite $siteSC -LockState Unlock
+                Write-Verbose "$siteUrl locked, unlocking..."
+                Set-SPSite $siteSC -LockState Unlock
             }
             try {
                 $obj.Features.Remove($feature.DefinitionId, $true)
@@ -147,9 +145,8 @@ Param(
                 Set-SiteLockStatus -Site $siteSC -ReadLocked $readL -WriteLocked $writeL -ReadOnly $readO
             }
         }
-        else
-        {
-			Write-Host "Feature found in" $objName ":" $obj.Url -foregroundcolor Red
+        else {
+            Write-Host "Feature found in" $objName ":" $obj.Url -foregroundcolor Red
         }
         $verbosePreference = 'SilentlyContinue'
     }
@@ -158,18 +155,17 @@ Param(
     }
 }
 
-#Start Logging
+# Start Logging
 StartTracing
 
-#Log the CVS Column Title Line
+# Log the CVS Column Title Line
 Write-Host "FeatureName;FeatureUrl" -foregroundcolor Red
- 
-foreach ($event in $input)
-    {    
-    $DBname = $event.split(";")[0]
-	$fid = $event.split(";")[1]
-    Remove-SPFeatureFromContentDB -ContentDb $dbname -FeatureId $fid
-    }
 
-#Stop Logging
+foreach ($event in $input) {    
+    $DBname = $event.split(";")[0]
+    $fid = $event.split(";")[1]
+    Remove-SPFeatureFromContentDB -ContentDb $dbname -FeatureId $fid
+}
+
+# Stop Logging
 Stop-Transcript

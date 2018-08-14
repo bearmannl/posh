@@ -45,23 +45,23 @@ if ($sl -gt 0) {
     $DBserver = $dbs.Server
 }
 
-#Set Variables
+# Set Variables
 $input = @(Get-Content $path)
 
-#Declare Log File
+# Declare Log File
 function StartTracing {
     [CmdLetBinding()]
-    Param()
+    param()
     $logPath = 'D:\Logs\Scripts\MissingDependencies'
-    if (!(Test-Path -Path $logPath -PathType Container)) { New-Item -ItemType Directory -Force -Path $logPath }
+    if ($null -eq (Test-Path -Path $logPath -PathType Container)) { New-Item -ItemType Directory -Force -Path $logPath }
     $LogTime = Get-Date -Format yyyy-MM-dd_h-mm
     Start-Transcript -Path "$logPath\MissingWebPartOutput-$LogTime.rtf"
 }
  
-#Declare SQL Query function
+# Declare SQL Query function
 function Invoke-SQLQuery {
     [CmdLetBinding()]
-    Param(
+    param(
         [string]$SqlServer,
         [string]$SqlDatabase,
         [string]$SqlQuery
@@ -80,19 +80,19 @@ function Invoke-SQLQuery {
 }
 
 function GetWebPartDetails ($wpid, $DBname) {
-    #Define SQL Query and set in Variable
+    # Define SQL Query and set in Variable
     $Query = "SELECT * from AllDocs inner join AllWebParts on AllDocs.Id = AllWebParts.tp_PageUrlID where AllWebParts.tp_WebPartTypeID = '" + $wpid + "'"
  
-    #Running SQL Query to get information about Assembly (looking in EventReceiver Table) and store it in a Table
+    # Running SQL Query to get information about Assembly (looking in EventReceiver Table) and store it in a Table
     $QueryReturn = @(Invoke-SQLQuery -SqlServer $DBserver -SqlDatabase $DBname -SqlQuery $Query | Select-Object Id, SiteId, DirName, LeafName, WebId, ListId, tp_ZoneID, tp_DisplayName)
  
-    #Actions for each element in the table returned
+    # Actions for each element in the table returned
     foreach ($event in $QueryReturn) {
-        if ($event.id -ne $null) {
-            #Get Site URL
+        if ($null -ne $event.Id) {
+            # Get Site URL
             $site = Get-SPSite -Identity $event.SiteId
     
-            #Log information to Host
+            # Log information to Host
             Write-Host $wpid -nonewline -foregroundcolor yellow
             write-host ";" -nonewline
             write-host $event.tp_DisplayName -foregroundcolor yellow
@@ -113,10 +113,10 @@ function GetWebPartDetails ($wpid, $DBname) {
     }
 }
  
-#Start Logging
+# Start Logging
 StartTracing
  
-#Log the CVS Column Title Line
+# Log the CVS Column Title Line
 write-host "WebPartID;PageUrl;MaintenanceUrl;WpZoneID" -foregroundcolor Red
  
 foreach ($event in $input) {
@@ -125,5 +125,5 @@ foreach ($event in $input) {
     GetWebPartDetails $wpid $dbname
 }
     
-#Stop Logging
+# Stop Logging
 Stop-Transcript

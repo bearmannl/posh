@@ -26,16 +26,16 @@
     Date    : 2017-10-24
     Version : 1.0
 #>
-Param(
+param(
     [string]$InputFilePath = ".\Input.txt",
     [string]$OutputPath = ".\"
 )
 
-if(!($OutputPath -Match '.+?\\$')) { $OutputPath = $OutputPath + "\" }
+if($null -eq ($OutputPath -Match '.+?\\$')) { $OutputPath = $OutputPath + "\" }
 
 $inputContent = Get-Content $InputFilePath
 
-if ($inputContent -ne $null -and ($inputContent | Measure-Object).Count -gt 0) {
+if ($null -ne $inputContent -and ($inputContent | Measure-Object).Count -gt 0) {
     $missingAssemblies = @()
     $missingFeatures = @()
     $missingSetupFiles = @()
@@ -45,7 +45,7 @@ if ($inputContent -ne $null -and ($inputContent | Measure-Object).Count -gt 0) {
     $missingUnmatched = @()
     
     foreach ($row in $inputContent) {
-        if ($row -ne $null -and $row.Length -gt 0 -and $row -match '^\[.+?') {
+        if ($null -ne $row -and $row.Length -gt 0 -and $row -match '^\[.+?') {
             if ([regex]::matches($row, '\[[^\]]+\]').Groups[0].Value -eq "[MissingAssembly]") {
                 $missingAssemblies += "$([regex]::matches($row, '\[[^\]]+\]').Groups[2].Value -Replace '[[\]]+');$([regex]::matches($row, '\[[^\]]+\]').Groups[1].Value -Replace '[[\]]+')"
             }

@@ -18,7 +18,7 @@
 	Version	: 1.5
 #>
 
-Param (
+param (
     [switch]$DeleteReferences
 )
 
@@ -58,23 +58,23 @@ if ($sl -gt 0) {
     $DBserver = $dbs.Server
 }
 
-#Set Variables
+# Set Variables
 $input = @(Get-Content $path)
 
-#Declare Log File
+# Declare Log File
 function StartTracing {
     [CmdLetBinding()]
-    Param()
+    param()
     $logPath = 'D:\Logs\Scripts\MissingDependencies'
-    if (!(Test-Path -Path $logPath -PathType Container)) { New-Item -ItemType Directory -Force -Path $logPath }
+    if ($null -eq (Test-Path -Path $logPath -PathType Container)) { New-Item -ItemType Directory -Force -Path $logPath }
     $LogTime = Get-Date -Format yyyy-MM-dd_h-mm
     Start-Transcript -Path "$logPath\MissingAssemblyOutput-$LogTime.rtf"
 }
 
-#Declare SQL Query function
+# Declare SQL Query function
 function Invoke-SQLQuery {
     [CmdLetBinding()]
-    Param(
+    param(
         [string]$SqlServer,
         [string]$SqlDatabase,
         [string]$SqlQuery
@@ -95,23 +95,23 @@ function Invoke-SQLQuery {
 
 function GetAssemblyDetails {
     [CmdLetBinding()]
-    Param(
+    param(
         [string]$assembly,
         [string]$DBname
     )
-    #Define SQL Query and set in Variable
+    # Define SQL Query and set in Variable
     $Query = "SELECT * from EventReceivers where Assembly = '" + $assembly + "'"
     #$Query = "SELECT * from EventReceivers where Assembly = 'Microsoft.Office.InfoPath.Server, Version=14.0.0.0, Culture=neutral, PublicKeyToken=71e9bce111e9429c'" 
 
-    #Running SQL Query to get information about Assembly (looking in EventReceiver Table) and store it in a Table
+    # Running SQL Query to get information about Assembly (looking in EventReceiver Table) and store it in a Table
     $QueryReturn = @(Invoke-SQLQuery -SqlServer $DBserver -SqlDatabase $DBname -SqlQuery $Query | Select-Object Id, Name, SiteId, WebId, HostId, HostType)
 
-    #Actions for each element in the table returned
+    # Actions for each element in the table returned
     foreach ($event in $QueryReturn) {   
-        #HostID (check http://msdn.microsoft.com/en-us/library/ee394866(v=prot.13).aspx for HostID Type reference)
+        # HostID (check http://msdn.microsoft.com/en-us/library/ee394866(v=prot.13).aspx for HostID Type reference)
         if ($event.HostType -eq 0) {
             $site = Get-SPSite -Identity $event.SiteId			
-            #Get the EventReceiver Site Object
+            # Get the EventReceiver Site Object
             $er = $site.EventReceivers | Where-Object {$_.Id -eq $event.Id}
 			
             if ($er) {
@@ -130,7 +130,7 @@ function GetAssemblyDetails {
         if ($event.HostType -eq 1) {
             $site = Get-SPSite -Identity $event.SiteId
             $web = $site | Get-SPWeb -Identity $event.WebId
-            #Get the EventReceiver Site Object
+            # Get the EventReceiver Site Object
             $er = $web.EventReceivers | Where-Object {$_.Id -eq $event.Id}
 			
             if ($er) {
@@ -150,7 +150,7 @@ function GetAssemblyDetails {
             $site = Get-SPSite -Identity $event.SiteId
             $web = $site | Get-SPWeb -Identity $event.WebId
             $list = $web.Lists | Where-Object {$_.Id -eq $event.HostId}
-            #Get the EventReceiver List Object
+            # Get the EventReceiver List Object
             $er = $list.EventReceivers | Where-Object {$_.Id -eq $event.Id}
 			
             if ($er) {
@@ -170,20 +170,20 @@ function GetAssemblyDetails {
     }
 }
 
-#Start Logging
+# Start Logging
 StartTracing
 
 $i = 0
 
 foreach ($event in $input) {
     $i++
-	Write-Verbose "Line		: $i"
-	$DBname = $event.split(";")[0]
+    Write-Verbose "Line		: $i"
+    $DBname = $event.split(";")[0]
     $assembly = $event.split(";")[1]
     GetAssemblyDetails $assembly $dbname
 }
-    
+
 $verbosePreference = 'SilentlyContinue'
 	
-#Stop Logging
+# Stop Logging
 Stop-Transcript
