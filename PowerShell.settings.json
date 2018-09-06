@@ -1,0 +1,12 @@
+{
+    // THIS IS NOT A VALID JSON FILE!
+    // Choose one of the following formatting styles and apply it to your workspace to avoid triggering massive amounts of changes by using 'format document' in PowerShell script files.
+    // Stroustrup
+    "powershell.codeFormatting.openBraceOnSameLine": true,
+    "powershell.codeFormatting.newLineAfterOpenBrace": true,
+    "powershell.codeFormatting.newLineAfterCloseBrace": true,
+    // Allman
+    "powershell.codeFormatting.openBraceOnSameLine": false,
+    "powershell.codeFormatting.newLineAfterOpenBrace": true,
+    "powershell.codeFormatting.newLineAfterCloseBrace": true
+}
