@@ -1,0 +1,94 @@
+{
+	"Servers" : [
+		{
+			"Name" : "AADC01",
+			"Outbound" : [
+				{
+					"Name" : "DC01",
+					"Ports" : [ 53,88,135,389,445,636,49152,65535 ]
+				},
+				{
+					"Name" : "DC02",
+					"Ports" : [ 53,88,135,389,445,636,49152,65535 ]
+				},
+				{
+					"Name" : "ADFS01",
+					"Ports" : [ 80,443,5985 ]
+				},
+				{
+					"Name" : "ADFS02",
+					"Ports" : [ 80,443,5985 ]
+				},
+				{
+					"Name" : "adminwebservice.microsoftonline.com",
+					"Ports" : [ 443 ]
+				},
+				{
+					"Name" : "login.windows.net",
+					"Ports" : [ 443 ]
+				},
+				{
+					"Name" : "provisioningapi.microsoftonline.com",
+					"Ports" : [ 443 ]
+				},
+				{
+					"Name" : "microsoftonline.com",
+					"Ports" : [ 80,443 ]
+				},
+				{
+					"Name" : "mscrl.microsoft.com",
+					"Ports" : [ 80,443 ]
+				},
+				{
+					"Name" : "secure.aadcdn.microsoftonline-p.com",
+					"Ports" : [ 80,443 ]
+				}
+			]
+		},
+		{
+			"Name" : "AADC02",
+			"Outbound" : [
+				{
+					"Name" : "DC01",
+					"Ports" : [ 53,88,135,389,445,636,49152,65535 ]
+				},
+				{
+					"Name" : "DC02",
+					"Ports" : [ 53,88,135,389,445,636,49152,65535 ]
+				},
+				{
+					"Name" : "ADFS01",
+					"Ports" : [ 80,443,5985 ]
+				},
+				{
+					"Name" : "ADFS02",
+					"Ports" : [ 80,443,5985 ]
+				},
+				{
+					"Name" : "adminwebservice.microsoftonline.com",
+					"Ports" : [ 443 ]
+				},
+				{
+					"Name" : "login.windows.net",
+					"Ports" : [ 443 ]
+				},
+				{
+					"Name" : "provisioningapi.microsoftonline.com",
+					"Ports" : [ 443 ]
+				},
+				{
+					"Name" : "microsoftonline.com",
+					"Ports" : [ 80,443 ]
+				},
+				{
+					"Name" : "mscrl.microsoft.com",
+					"Ports" : [ 80,443 ]
+				},
+				{
+					"Name" : "secure.aadcdn.microsoftonline-p.com",
+					"Ports" : [ 80,443 ]
+				}
+			]
+		}
+	]	
+}
