@@ -5,19 +5,32 @@
 .DESCRIPTION
      This script checks if specified ports are open *from* local server *to* remote servers, based on the server and port mapping in the .json file. Possible output formats include .csv and .htm.
 
-.PARAMETER Verbs
-	Optional switch adds Verbose output to track script progress.
-
 .PARAMETER Output
-	Required parameter, determines the desired type of output.
+	Required parameter, determines the desired type of output. Currently supports CSV and HTML.
+
+.PARAMETER BaseDirectoryPath
+    Optional parameter to direct the script to a different folder for the JSON config files. Uses script invocation path by default if no input is provided.
+    
+.PARAMETER BaseConfigFile
+    Optional parameter to point the script to a different file for the JSON config. Uses script invocation path by default if no input is provided.
+
+.PARAMETER LogFolderPath
+    Optional parameter to direct the script to a different folder for the log output. Uses script invocation path by default if no input is provided.
+
+.PARAMETER HtmlOutputFolderPath
+    Optional parameter to direct the script to a different folder for the HTML output. Uses script invocation path by default if no input is provided.
+
+.PARAMETER CsvOutputFolderPath
+    Optional parameter to direct the script to a different folder for the CSV output. Uses script invocation path by default if no input is provided.
 
 .PARAMETER TestData
 	Optional switch, portscans can take a while, in case of debugging or editing styling of the script, use test data.
 
 .EXAMPLE
-     Test-NetConnections.ps1 -Output CSV
-	 Test-NetConnections.ps1 -Output HTML -Verbs
-	 Test-NetConnections.ps1 -Output HTML -Verbs -TestData
+     Test-NetConnections.ps1 -Output CSV -CsvOutputFolderPath "C:\Temp\Output\"
+	 Test-NetConnections.ps1 -Output HTML -BaseDirectoryPath "C:\Scripts\Tests\" -BaseConfigFile "Test-NetConnections.AADCsample.json"
+     Test-NetConnections.ps1 -Output HTML -TestData
+     Test-NetConnections.ps1 -Output HTML -TestData -LogFolderPath "C:\Scripts\Logs\" -HtmlOutputFolderPath "C:\inetpub\wwwroot\health80\"
       
 .LINK
     http://www.rubicon.nl
@@ -30,40 +43,45 @@
 					1.1 | MBE | 2017-08-10 | Added HTML output, including function, param and switch.
 					1.2 | MBE | 2017-08-11 | Added comments.
 					1.3 | MBE | 2017-08-14 | Added explicit states for the firewall status. Includes ports which are open but have no service listening and strict ports.
-					1.4 | MBE | 2017-08-19 | Cleaned up the TestData functionality. Added basic output folder checks.
+                    1.4 | MBE | 2017-08-19 | Cleaned up the TestData functionality. Added basic output folder checks.
+                    1.5 | MBE | 2018-11-22 | Refactored some params in line with lessons learned over the past year. Using Write-Host since this is now fully supported with the Information stream.
 #>
 param(
     [Parameter(Mandatory = $true)]
     [ValidateSet('CSV', 'HTML')]
-    [System.String]$Output,
-    [Switch]$Verbs,
+    [String]$Output,
+    [String]$BaseDirectoryPath,
+    [String]$BaseConfigFile = "Test-NetConnections.json",
+    [String]$LogFolderPath,
+    [String]$HtmlOutputFolderPath,
+    [String]$CsvOutputFolderPath,
     [Switch]$TestData
 )
 
 #region basic script setup
 $script:localServer = $env:COMPUTERNAME
-
-# set location to store migration logs
-$script:logPathFolder = "C:\Logs\Scripts"
-
-if ($null -eq (Test-Path $script:logPathFolder)) { New-Item -ItemType directory -Path $script:logPathFolder > $null; Write-Verbose "Log output directory created at path $script:logPathFolder" }
-
 $script:cDate = (Get-Date)
-$script:logPath = "$script:logPathFolder\Test-NetConnectionsOutput_$($script:localServer)_{0:yyyy-MM-dd_HHmmss}.rtf" -f ($script:cDate)
+$script:logFile = "Test-NetConnectionsOutput_$($script:localServer)_{0:yyyy-MM-dd_HHmmss}.rtf" -f ($script:cDate)
+$script:htmlOutPutFile = "Test-NetConnectionsOutput.htm"
+$script:csvOutPutFile = "Test-NetConnectionsOutput_$($script:localServer)_{0:yyyy-MM-dd_HHmmss}.csv" -f ($script:cDate)
 
-$script:BaseDirectory = Get-Location
-$script:BaseConfig = "\Test-NetConnections.json"
+# If no alternate BaseDirectoryPath is given, take script invocation path
+if ([string]::IsNullOrEmpty($BaseDirectoryPath)) { $BaseDirectoryPath = $PSScriptRoot }
+if ([string]::IsNullOrEmpty($LogFolderPath)) { $LogFolderPath = $PSScriptRoot }
+# Ensure the directory path params end in a slash
+if ($false -eq ($BaseDirectoryPath -Match '.+?\\$')) { $BaseDirectoryPath = $BaseDirectoryPath + "\" }
+if ($false -eq ($LogFolderPath -Match '.+?\\$')) { $LogFolderPath = $LogFolderPath + "\" }
 
-$script:htmlOutputFolder = "C:\inetpub\wwwroot\health80"
-$script:htmlOutPutFile = "\default.htm"
-
-$script:csvOutputFolder = $script:logPathFolder
-$script:csvOutPutFile = "\Test-NetConnectionsOutput_$($script:localServer)_{0:yyyy-MM-dd_HHmmss}.csv" -f ($script:cDate)
+# Check location to store system logs exists, create if not
+if ($null -eq (Test-Path $LogFolderPath)) { New-Item -ItemType directory -Path $LogFolderPath > $null; Write-Host "Log output directory created at path $($LogFolderPath)" }
+$script:logPath = "$($LogFolderPath)$($script:logFile)"
 
 if ($Output -eq "HTML") {
-    if ($null -eq (Test-Path $script:htmlOutputFolder)) {
+    if ([string]::IsNullOrEmpty($HtmlOutputFolderPath)) { $HtmlOutputFolderPath = $PSScriptRoot }
+
+    if ($null -eq (Test-Path $HtmlOutputFolderPath)) {
         $title = "HTML output path invalid"
-        $message = "$script:htmlOutputFolder does not exist, do you want to create a folder at this path?"
+        $message = "$($HtmlOutputFolderPath) does not exist, do you want to create a folder at this path?"
 		
         $yes = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Creates a new folder."
         $no = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Exits the script."
@@ -71,47 +89,38 @@ if ($Output -eq "HTML") {
         $result = $host.ui.PromptForChoice($title, $message, $options, 0) 
 		
         switch ($result) {
-            0 { New-Item -ItemType directory -Path $script:htmlOutputFolder > $null; Write-Verbose "HTML output folder created." }
+            0 { New-Item -ItemType directory -Path $HtmlOutputFolderPath > $null; Write-Host "HTML output folder created." }
             1 { Write-Error "No output folder available!" }
         }
     }
+    # Ensure the directory path params end in a slash
+    if ($false -eq ($HtmlOutputFolderPath -Match '.+?\\$')) { $HtmlOutputFolderPath = $HtmlOutputFolderPath + "\" }
 }
 
 if ($Output -eq "CSV") {
-    if ($null -eq (Test-Path $script:csvOutputFolder)) {
+    if ([string]::IsNullOrEmpty($CsvOutputFolderPath)) { $CsvOutputFolderPath = $PSScriptRoot }
+
+    if ($null -eq (Test-Path $CsvOutputFolderPath)) {
         $title = "CSV output path invalid"
-        $message = "$script:csvOutputFolder does not exist, do you want to create a folder at this path?"
+        $message = "$($CsvOutputFolderPath) does not exist, do you want to create a folder at this path?"
 		
         $yes = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Creates a new folder."
         $no = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Exits the script."
         $options = [System.Management.Automation.Host.ChoiceDescription[]]($yes, $no)
-        $result = $host.ui.PromptForChoice($title, $message, $options, 0) 
+        $result = $host.UI.PromptForChoice($title, $message, $options, 0) 
 		
         switch ($result) {
-            0 { New-Item -ItemType directory -Path $script:csvOutputFolder > $null; Write-Verbose "CSV output folder created." }
+            0 { New-Item -ItemType directory -Path $CsvOutputFolderPath > $null; Write-Host "CSV output folder created." }
             1 { Write-Error "No output folder available!" }
         }
     }
+    # Ensure the directory path params end in a slash
+    if ($false -eq ($CsvOutputFolderPath -Match '.+?\\$')) { $CsvOutputFolderPath = $CsvOutputFolderPath + "\" }
 }
 
 #endregion
 
 #region Functions
-function Write-VerboseCustom {
-    [CmdLetBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [String]$Message
-    )
-    # to provide verbose feedback to users, only on select statements
-    if ($Verbs) {
-        $oldVerbosePreference = $VerbosePreference
-        $VerbosePreference = "Continue"
-        Write-Verbose $Message
-        $VerbosePreference = $oldVerbosePreference
-    }
-}
-
 function ConvertTo-HtmlConditionalFormat {
     [CmdLetBinding()]
     param(
@@ -147,20 +156,42 @@ function Test-PortStatus {
         $RemoteHost,
         $RemotePort
     )
-    if (!$TestData) {
+    if ($TestData) {
+        # portscans can take a while, in case of debugging or editing styling, use test data
+        $pStatus = Get-Random -Input "LISTENING", "LISTENING", "LISTENING", "LISTENING", "LISTENING", "OPEN", "OPEN", "OPEN", "CLOSED", "CLOSED", "STRICT", "STRICT", "UNKNOWN"
+    }
+    else {
         # perform a met connection test, determine status based on PingSucceeded and TcpTestSucceeded
         $testConnection = Test-NetConnection -Computername $RemoteHost -Port $RemotePort -WarningAction:SilentlyContinue
         if ($testConnection.PingSucceeded -AND $testConnection.TcpTestSucceeded) { $pStatus = "LISTENING" } 
         elseif ($testConnection.PingSucceeded -AND !$testConnection.TcpTestSucceeded) { $pStatus = "OPEN" }
         elseif (!$testConnection.PingSucceeded -AND !$testConnection.TcpTestSucceeded) { $pStatus = "CLOSED" }
         elseif (!$testConnection.PingSucceeded -AND $testConnection.TcpTestSucceeded) { $pStatus = "STRICT" }
-        else { $pStatus = "UNKNOWN" }
+        else { $pStatus = "UNKNOWN" }        
     }
-    else {
-        # portscans can take a while, in case of debugging or editing styling, use test data
-        $pStatus = Get-Random -Input "LISTENING", "LISTENING", "LISTENING", "LISTENING", "LISTENING", "OPEN", "OPEN", "OPEN", "CLOSED", "CLOSED", "STRICT", "STRICT", "UNKNOWN"
+    Write-Host "[$($RemotePort)] [" -NoNewline
+
+    switch ($pStatus) {
+        LISTENING { 
+            Write-Host "$($pStatus)" -NoNewline -ForegroundColor DarkGreen
+        }
+        OPEN { 
+            Write-Host "$($pStatus)" -NoNewline -ForegroundColor DarkYellow
+        }
+        CLOSED { 
+            Write-Host "$($pStatus)" -NoNewline -ForegroundColor DarkRed
+        }
+        STRICT { 
+            Write-Host "$($pStatus)" -NoNewline -ForegroundColor DarkMagenta
+        }
+        UNKNOWN { 
+            Write-Host "$($pStatus)" -NoNewline -ForegroundColor DarkCyan
+        }
+        Default {
+            Write-Host "$($pStatus)" -NoNewline
+        }
     }
-    Write-VerboseCustom "$($RemotePort) $($pStatus)"
+    Write-Host "]"
 
     Write-Output $pStatus
 }
@@ -192,19 +223,24 @@ $ErrorActionPreference = "Stop"
 Start-Transcript -Path $script:logPath
 
 # load and parse the json config file 
-try { $script:config = Get-Content $script:BaseDirectory$script:BaseConfig -Raw -ErrorAction:SilentlyContinue -WarningAction:SilentlyContinue | ConvertFrom-Json -ErrorAction:SilentlyContinue -WarningAction:SilentlyContinue }
-catch { Write-Error -Message "Unable to open base config file" }
+try {
+    Write-Host "Loading config from: $($script:BaseDirectoryPath)$($BaseConfigFile)"
+    $script:config = Get-Content $script:BaseDirectoryPath$BaseConfigFile -Raw | ConvertFrom-Json
+}
+catch {
+    Write-Error -Message "Unable to open base JSON config file."
+}
 
 $script:serverResults = @()
 
 # get outbound mappings for the local server. Allows for distributing one central json file.
 $server = $script:config.Servers | Where-Object { $_.Name -eq $localServer }
 if ($server) {
-    Write-VerboseCustom "Checking connection from source server: $localServer"
+    Write-Host "Checking connection from source server: $($localServer)"
 
     # process each destination server
     foreach ($connection in $server.Outbound) {
-        Write-VerboseCustom "Checking outbound connections to destination server: $($connection.Name)"
+        Write-Host "Checking outbound connections to destination server: $($connection.Name)"
 		
         # ping every port in the mapping
         foreach ($port in $connection.Ports) {
@@ -214,12 +250,12 @@ if ($server) {
     }
 }
 else {
-    Write-VerboseCustom "No configuration present for the local server."
+    Write-Host "No configuration present for the local server."
 }
 
 # output the results according to the provided param
 switch -Wildcard ($Output.ToLower()) {
-    "csv" {	$serverResults | Export-CSV -Path $script:logPathFolder$script:csvOutPutFile }
+    "csv" {	$serverResults | Export-CSV -Path $LogFolderPath$script:csvOutPutFile }
     "html" {
         # add basic page style configuration
         $style = "<style>
@@ -247,7 +283,7 @@ switch -Wildcard ($Output.ToLower()) {
         $cStyle.Add('$_.Value -eq "STRICT"', ("Status", "background-color:blue"))
 
         $styledHtml = ConvertTo-HtmlConditionalFormat -PlainHtml $html -ConditionalStyle $cStyle
-        $styledHtml | Out-File $script:htmlOutputFolder$script:htmlOutPutFile -Force
+        $styledHtml | Out-File $HtmlOutputFolderPath$script:htmlOutPutFile -Force
     }
     default { Write-Output $serverResults }
 }
