@@ -91,6 +91,7 @@ function Get-O365DnsRecords {
         [string]$SpfFailToken,
         [string]$DmarcDomainPolicy,
         [string]$DmarcSubdomainPolicy,
+        [int]$DmarcPct,
         [string]$DmarcRuaEmail,
         [string]$DmarcRufEmail
     )
@@ -102,6 +103,7 @@ function Get-O365DnsRecords {
     $injectSpfFormatted = if ([string]::IsNullOrWhiteSpace($InjectSpf)) { ' ' } else { ' {0} ' -f $InjectSpf }
     $dmarcDomainPolicy = if ([string]::IsNullOrWhiteSpace($DmarcDomainPolicy)) { 'none' } else { $DmarcDomainPolicy }
     $dmarcSubdomainPolicy = if ([string]::IsNullOrWhiteSpace($DmarcSubdomainPolicy)) { 'none' } else { $DmarcSubdomainPolicy }
+    $dmarcPercentage = if ([string]::IsNullOrWhiteSpace($DmarcPct)) { '100' } else { $DmarcPct }
     $dmarcRuaFormatted = if ([string]::IsNullOrWhiteSpace($DmarcRuaEmail)) { '' } else { ' rua=mailto:{0};' -f $DmarcRuaEmail }
     $dmarcRufFormatted = if ([string]::IsNullOrWhiteSpace($DmarcRufEmail)) { '' } else { ' ruf=mailto:{0};' -f $DmarcRufEmail }
     
@@ -175,7 +177,7 @@ function Get-O365DnsRecords {
     $o365DnsRecords.Records.Add(([DnsRecord]@{
                 Category   = 'DMARC'
                 Host       = '_dmarc'
-                Value      = 'v=DMARC1; p={0}; sp={1}; pct=100;{2}{3} fo=1' -f $DmarcDomainPolicy, $DmarcSubdomainPolicy, $dmarcRuaFormatted, $dmarcRufFormatted
+                Value      = 'v=DMARC1; p={0}; sp={1}; pct={2};{3}{4} fo=1' -f $dmarcDomainPolicy, $dmarcSubdomainPolicy, $dmarcPercentage, $dmarcRuaFormatted, $dmarcRufFormatted
                 TimeToLive = 3600
                 Type       = 'TXT'
             }
@@ -264,7 +266,7 @@ function Get-CurrentDnsRecords {
         SpfFailToken = if ($currentSpf.Contains("?all")) { '?' } else { if ($currentSpf.Contains("~all")) { '~' } else { if ($currentSpf.Contains("+all")) { '+' } else { '-' } } }
         DmarcDP      = if ($currentDmarc -match ' p=') { $currentDmarc.Split(' p=')[1].Split(';')[0] } else { $null }
         DmarcSDP     = if ($currentDmarc -match ' sp=') { $currentDmarc.Split(' sp=')[1].Split(';')[0] } else { $null }
-        DmarcPct     = if ($currentDmarc -match ' pct=') { $currentDmarc.Split(' pct=')[1].Split(';')[0] } else { $null }
+        DmarcPct     = if ($currentDmarc -match ' pct=') { $currentDmarc.Split(' pct=')[1].Split(';')[0] } else { 100 }
         DmarcRua     = if ($currentDmarc -match ' rua=') { $currentDmarc.Split(' rua=')[1].Split(';')[0].Replace('mailto:', '') } else { $null }
         DmarcRuf     = if ($currentDmarc -match ' ruf=') { $currentDmarc.Split(' ruf=')[1].Split(';')[0].Replace('mailto:', '') } else { $null }
     }
@@ -340,6 +342,7 @@ foreach ($domain in $AcceptedDomains) {
         $dmarcSDP = $currentRecords.DmarcSDP
         $dmarcRua = $currentRecords.DmarcRua
         $dmarcRuf = $currentRecords.DmarcRuf
+        $dmarcPct = $currentRecords.DmarcPct
     
         $spfInjectContent = if ($spf) { $spf.Replace('v=spf1', '').Replace('mx', '').Replace('include:spf.protection.outlook.com', '').Replace('include:spf.protection.outlook.com', '').Replace('-all', '').Replace('~all', '').Replace('?all', '').Trim() }
     }
@@ -347,7 +350,7 @@ foreach ($domain in $AcceptedDomains) {
         $spfFailToken = '-'
     }
     
-    $dnsRecords.AcceptedDomains += Get-O365DnsRecords -DefaultDomain $initialDomainPrefix -Domain $domain -InjectSpf $spfInjectContent -SpfFailToken $spfFailToken -DmarcDomainPolicy $dmarcDP -DmarcSubdomainPolicy $dmarcSDP -DmarcRuaEmail $dmarcRua -DmarcRufEmail $dmarcRuf
+    $dnsRecords.AcceptedDomains += Get-O365DnsRecords -DefaultDomain $initialDomainPrefix -Domain $domain -InjectSpf $spfInjectContent -SpfFailToken $spfFailToken -DmarcDomainPolicy $dmarcDP -DmarcSubdomainPolicy $dmarcSDP -DmarcPct $dmarcPct -DmarcRuaEmail $dmarcRua -DmarcRufEmail $dmarcRuf
 }
 
 if ($OutputWord) {
