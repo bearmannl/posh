@@ -106,16 +106,15 @@ function Get-O365DnsRecords {
     $dmarcRufFormatted = if ([string]::IsNullOrWhiteSpace($DmarcRufEmail)) { '' } else { ' ruf=mailto:{0};' -f $DmarcRufEmail }
     
     if ($IncludeValidationRecords) {
-        # if (!Get-InstalledModule MSOnline) { Install-Module MSOnline -Scope CurrentUser }
-        # Import-Module MSOnline
-        # try { Get-MsolDomain -ErrorAction Stop > $null }
-        # catch { Connect-MsolService }
+        if (!Get-InstalledModule MSOnline) { Install-Module MSOnline -Scope CurrentUser }
+        Import-Module MSOnline
+        try { Get-MsolDomain -ErrorAction Stop > $null }
+        catch { Connect-MsolService }
 
         $o365DnsRecords.Records.Add(([DnsRecord]@{
                     Category   = 'Validation'
                     Host       = '@'
-                    Value      = 'MS=msXXXXXXXX'
-                    # Value      = (Get-MsolDomainVerificationDNS -TenantId ((Get-MsolAccountSku).AccountObjectId[0]) -DomainName $domain -Mode DnsTxtRecord)
+                    Value      = (Get-MsolDomainVerificationDNS -TenantId ((Get-MsolAccountSku).AccountObjectId[0]) -DomainName $domain -Mode DnsTxtRecord)
                     TimeToLive = 3600
                     Type       = 'TXT'
                 }
