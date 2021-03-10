@@ -69,6 +69,16 @@ class DnsRecord {
     [int] $Weight
     [int] $Priority
 }
+
+class CurrentDnsRecordValues {
+    [string] $Spf
+    [bool] $SpfSoftfail
+    [string] $DmarcDP
+    [string] $DmarcSDP
+    [int] $DmarcPct
+    [string] $DmarcRua
+    [string] $DmarcRuf
+}
 #endregion
 
 #region functions
@@ -92,8 +102,8 @@ function Get-O365DnsRecords {
     $spfFailtoken = if ($SpfSoftfail) { '~' } else { '-' }
     $dmarcDomainPolicy = if ([string]::IsNullOrWhiteSpace($DmarcDomainPolicy)) { 'none' } else { $DmarcDomainPolicy }
     $dmarcSubdomainPolicy = if ([string]::IsNullOrWhiteSpace($DmarcSubdomainPolicy)) { 'none' } else { $DmarcSubdomainPolicy }
-    $dmarcRuaFormatted = if ([string]::IsNullOrWhiteSpace($DmarcRuaEmail)) { '' } else { ' rua=mailto:{0}' -f $DmarcRuaEmail }
-    $dmarcRufFormatted = if ([string]::IsNullOrWhiteSpace($DmarcRufEmail)) { '' } else { ' ruf=mailto:{0}' -f $DmarcRufEmail }
+    $dmarcRuaFormatted = if ([string]::IsNullOrWhiteSpace($DmarcRuaEmail)) { '' } else { ' rua=mailto:{0};' -f $DmarcRuaEmail }
+    $dmarcRufFormatted = if ([string]::IsNullOrWhiteSpace($DmarcRufEmail)) { '' } else { ' ruf=mailto:{0};' -f $DmarcRufEmail }
     
     if ($IncludeValidationRecords) {
         if (!Get-InstalledModule MSOnline) { Install-Module MSOnline -Scope CurrentUser }
@@ -165,7 +175,7 @@ function Get-O365DnsRecords {
     $o365DnsRecords.Records.Add(([DnsRecord]@{
                 Category   = 'DMARC'
                 Host       = '_dmarc'
-                Value      = 'v=DMARC1 p={0} sp={1} pct=100{2}{3} fo=1' -f $DmarcDomainPolicy, $DmarcSubdomainPolicy, $dmarcRuaFormatted, $dmarcRufFormatted
+                Value      = 'v=DMARC1; p={0}; sp={1}; pct=100;{2}{3} fo=1' -f $DmarcDomainPolicy, $DmarcSubdomainPolicy, $dmarcRuaFormatted, $dmarcRufFormatted
                 TimeToLive = 3600
                 Type       = 'TXT'
             }
@@ -247,13 +257,14 @@ function Get-CurrentDnsRecords {
     $currentSpf = (Resolve-DnsName -Name $Domain -Type TXT -ErrorAction Ignore | Where-Object { $_.Strings -match 'v=spf1' }).Strings
     $currentDmarc = (Resolve-DnsName -Name ('_dmarc.{0}' -f $Domain) -Type TXT -ErrorAction Ignore).Strings
 
-    $currentO365DnsRecords = [pscustomobject]@{
-        currentSpf         = $currentSpf
-        currentSpfSoftfail = if ($currentSpf -match '~all') { $true } else { $false }
-        currentDmarcDP     = if ($currentDmarc -match ' p=') { $currentDmarc.Split(' p=')[1].Split('')[0] } else { $null }
-        currentDmarcSDP    = if ($currentDmarc -match ' sp=') { $currentDmarc.Split(' sp=')[1].Split('')[0] } else { $null }
-        currentDmarcRua    = if ($currentDmarc -match ' rua=') { $currentDmarc.Split(' rua=')[1].Split('')[0].Replace('mailto:', '') } else { $null }
-        currentDmarcRuf    = if ($currentDmarc -match ' ruf=') { $currentDmarc.Split(' ruf=')[1].Split('')[0].Replace('mailto:', '') } else { $null }
+    $currentO365DnsRecords = [CurrentDnsRecordValues]@{
+        Spf         = $currentSpf
+        SpfSoftfail = if ($currentSpf -match '~all') { $true } else { $false }
+        DmarcDP     = if ($currentDmarc -match ' p=') { $currentDmarc.Split(' p=')[1].Split(';')[0] } else { $null }
+        DmarcSDP    = if ($currentDmarc -match ' sp=') { $currentDmarc.Split(' sp=')[1].Split(';')[0] } else { $null }
+        DmarcPct    = if ($currentDmarc -match ' pct=') { $currentDmarc.Split(' pct=')[1].Split(';')[0] } else { $null }
+        DmarcRua    = if ($currentDmarc -match ' rua=') { $currentDmarc.Split(' rua=')[1].Split(';')[0].Replace('mailto:', '') } else { $null }
+        DmarcRuf    = if ($currentDmarc -match ' ruf=') { $currentDmarc.Split(' ruf=')[1].Split(';')[0].Replace('mailto:', '') } else { $null }
     }
 
     $currentO365DnsRecords
@@ -321,12 +332,12 @@ $dnsRecords = [Output]::New()
 foreach ($domain in $AcceptedDomains) {
     if ($IncludeCurrentRecords) {
         $currentRecords = Get-CurrentDnsRecords -Domain $domain
-        $spf = $currentRecords.currentSpf
-        $spfSoftFail = $currentRecords.currentSpfSoftfail
-        $dmarcDP = $currentO365DnsRecords.currentDmarcDP
-        $dmarcSDP = $currentO365DnsRecords.currentDmarcSDP
-        $dmarcRua = $currentO365DnsRecords.currentDmarcRua
-        $dmarcRuf = $currentO365DnsRecords.currentDmarcRuf
+        $spf = $currentRecords.Spf
+        $spfSoftFail = $currentRecords.SpfSoftfail
+        $dmarcDP = $currentRecords.DmarcDP
+        $dmarcSDP = $currentRecords.DmarcSDP
+        $dmarcRua = $currentRecords.DmarcRua
+        $dmarcRuf = $currentRecords.DmarcRuf
     
         $spfInjectContent = if ($spf) { $spf.Replace('v=spf1', '').Replace('mx', '').Replace('include:spf.protection.outlook.com', '').Replace('include:spf.protection.outlook.com', '').Replace('-all', '').Replace('~all', '').Replace('?all', '').Trim() }
     }
